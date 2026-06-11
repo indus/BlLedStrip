@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>LED Strip</title>
+	<style>
+		*,
+		*::before,
+		*::after {
+			box-sizing: border-box;
+			margin: 0;
+			padding: 0;
+		}
+
+		html,
+		body {
+			width: 100%;
+			height: 100%;
+			background: #bbb;
+			font-family: 'Segoe UI', system-ui, sans-serif;
+			overflow: hidden;
+		}
+
+		#glow {
+			position: fixed;
+			inset: 0;
+			pointer-events: none;
+			transition: background 0.5s ease;
+		}
+
+		#ui {
+			position: fixed;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%, -50%);
+		}
+
+		:root {
+			--tp-container-unit-size: 30px;
+			--tp-blade-value-width: 200px;
+			--tp-base-background-color: hsla(230, 5%, 90%, 1.00);
+			--tp-base-shadow-color: hsla(0, 0%, 0%, 0.10);
+			--tp-button-background-color: hsla(230, 7%, 75%, 1.00);
+			--tp-button-background-color-active: hsla(230, 7%, 60%, 1.00);
+			--tp-button-background-color-focus: hsla(230, 7%, 65%, 1.00);
+			--tp-button-background-color-hover: hsla(230, 7%, 70%, 1.00);
+			--tp-button-foreground-color: hsla(230, 10%, 30%, 1.00);
+			--tp-container-background-color: hsla(230, 15%, 30%, 0.20);
+			--tp-container-background-color-active: hsla(230, 15%, 30%, 0.32);
+			--tp-container-background-color-focus: hsla(230, 15%, 30%, 0.28);
+			--tp-container-background-color-hover: hsla(230, 15%, 30%, 0.24);
+			--tp-container-foreground-color: hsla(230, 10%, 30%, 1.00);
+			--tp-groove-foreground-color: hsla(230, 15%, 30%, 0.10);
+			--tp-input-background-color: hsla(230, 15%, 30%, 0.10);
+			--tp-input-background-color-active: hsla(230, 15%, 30%, 0.22);
+			--tp-input-background-color-focus: hsla(230, 15%, 30%, 0.18);
+			--tp-input-background-color-hover: hsla(230, 15%, 30%, 0.14);
+			--tp-input-foreground-color: hsla(230, 10%, 30%, 1.00);
+			--tp-label-foreground-color: hsla(230, 10%, 30%, 0.70);
+			--tp-monitor-background-color: hsla(230, 15%, 30%, 0.10);
+			--tp-monitor-foreground-color: hsla(230, 10%, 30%, 0.50);
+		}
+
+		.tp-rotv {
+			font-size: 16px !important;
+		}
+	</style>
+</head>
+
+<body>
+
+	<div id="glow"></div>
+	<div id="ui"></div>
+
+	<script type="module">
+
+		import { BluetoothLedStrip_IOTBT630 } from './BluetoothLedStrip_IOTBT630.js';
+		import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.js';
+
+		let device = null;
+		let isOn = false;
+
+		const params = {
+			status: 'Disconnected',
+			color: { r: 0, g: 255, b: 255 },
+		};
+
+		const pane = new Pane({
+			container: document.getElementById('ui'),
+		});
+
+
+		const connectBtn = pane.addButton({ title: 'Connect' });
+
+		const powerBtn = pane.addButton({ title: '⏻  Turn On' });
+		powerBtn.disabled = true;
+
+		const colorBinding = pane.addBinding(params, 'color', {
+			label: 'Color',
+			picker: 'inline',
+			expanded: true,
+		});
+		colorBinding.disabled = true;
+		pane.addBinding(params, 'status', { label: 'Status', readonly: true });
+
+		// ── Init glow on load ────────────────────────────────────────
+		updateGlow();
+
+		// ── Handlers ────────────────────────────────────────────────
+
+		connectBtn.on('click', () => {
+			params.status = 'Connecting…';
+			connectBtn.disabled = true;
+			pane.refresh();
+
+			device = new BluetoothLedStrip_IOTBT630.Device();
+			device.connect(
+				(d) => {
+					params.status = `Connected: ${d.name}`;
+					isOn = true;
+					powerBtn.title = '⏻  Turn Off';
+					powerBtn.disabled = false;
+					colorBinding.disabled = false;
+					pane.refresh();
+					applyColor();
+				},
+				(d) => {
+					params.status = 'Disconnected';
+					isOn = false;
+					powerBtn.title = '⏻  Turn On';
+					powerBtn.disabled = true;
+					colorBinding.disabled = true;
+					device = null;
+					connectBtn.disabled = false;
+					pane.refresh();
+					updateGlow();
+				},
+				(err) => {
+					params.status = `Error: ${err}`;
+					connectBtn.disabled = false;
+					pane.refresh();
+				}
+			);
+		});
+
+		powerBtn.on('click', () => {
+			if (!device) return;
+			isOn = !isOn;
+			device.setSwitch(isOn ? 1 : 0);
+			powerBtn.title = isOn ? '⏻  Turn Off' : '⏻  Turn On';
+			updateGlow();
+		});
+
+		colorBinding.on('change', () => {
+			updateGlow();
+			if (!device || !isOn) return;
+			applyColor();
+		});
+
+		function applyColor() {
+			if (!device) return;
+			const { r, g, b } = params.color;
+			device.setRGB(r, g, b);
+			updateGlow();
+		}
+
+		function updateGlow() {
+			const { r, g, b } = params.color;
+			const alpha = isOn ? 0.55 : 0.15;
+			const spread = isOn ? '60%' : '40%';
+			document.getElementById('glow').style.background =
+				`radial-gradient(ellipse at center, rgba(${r},${g},${b},${alpha}) 0%, transparent ${spread})`;
+		}
+
+	</script>
+</body>
+
+</html>
